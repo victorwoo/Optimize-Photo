@@ -5,10 +5,12 @@
 # 4. 输出时遇到重名文件：1. 比较 2. 改名。
 
 $DebugPreference = "Continue"
+. .\get-exif.ps1
+. .\Get-Image.ps1
 
 function Rename-Photo ($file) {
     # http://archive.msdn.microsoft.com/PSImage
-    Import-Module Image
+    #Import-Module Image
 
     $file = $_
     $fileName = $_.Name
@@ -29,7 +31,7 @@ function Rename-Photo ($file) {
 
     # Android 自带相机照片
     # 2010-07-21 13.25.54.jpg
-    # 2010-08-08 06.32.34[0].jpg
+    # 2010-08-08 06.32.34[0].jpgz
     if (!$matched) { $matched = $baseName -cmatch '^(?<YEAR>\d{4})-(?<MONTH>\d{2})-(?<DAY>\d{2}) (?<HOUR>\d{2})\.(?<MINUTE>\d{2})\.(?<SECOND>\d{2})(?:\[\d+\])?$' }
 
     # Camera 360 相机
@@ -107,6 +109,8 @@ function Rename-Photo ($file) {
         move -LiteralPath $_.FullName UNKNOWN -WhatIf 
     }
 }
+
+
 
 dir *.jpg, *.png, *.avi, *.mov | foreach {
     Rename-Photo $_
