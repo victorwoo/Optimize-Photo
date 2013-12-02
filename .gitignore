@@ -1,0 +1,6 @@
+*
+!.gitignore
+!*.ps1
+!*.cmd
+!*.md
+!LICENSE
