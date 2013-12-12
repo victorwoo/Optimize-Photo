@@ -4,8 +4,8 @@
 # 3. 旋转照片
 # 4. 输出时遇到重名文件：1. 比较 2. 改名。
 
-$inputDir = 'E:\Photo\optimize'
-cd D:\sync\vichamp\Optimize-Photo
+#$inputDir = 'E:\Photo\optimize'
+#cd D:\sync\vichamp\Optimize-Photo
 
 $DebugPreference = "Continue"
 . .\get-exif.ps1
@@ -33,7 +33,7 @@ function Rename-Photo ($file) {
     $extension = $_.Extension
     if ($extension -ne $null) { $extension = $extension.ToLower() }
 
-    Write-Debug "正在处理 $fileName"
+    # Write-Debug "正在处理 $fileName"
 
     $matched = $false
         
@@ -82,6 +82,7 @@ function Rename-Photo ($file) {
         [int]$millisecond = $Matches['MILLISECOND']
         [string]$rest = $Matches['REST']
     } else {
+    <#
         # iPhone照片、视频；佳能相机照片；扫描仪
         # IMG_1050.JPG
         if (!$matched) { $matched = $baseName -cmatch '^IMG_\d+$' }
@@ -89,66 +90,93 @@ function Rename-Photo ($file) {
         # 佳能相机视频
         # MVI_0037.AVI
         if (!$matched) { $matched = $baseName -cmatch '^MVI_\d+$' }
-
-        [int]$year = $file.CreationTime.Year
-        [int]$month = $file.CreationTime.Month
-        [int]$day = $file.CreationTime.Day
-        [int]$hour = $file.CreationTime.Hour
-        [int]$minute = $file.CreationTime.Minute
-        [int]$second = $file.CreationTime.Second
-        [int]$millisecond = $file.CreationTime.Millisecond
-    }
-
-    if ($matched) {
-        # 若通过 exif 或文件名识别出了时间信息
-        $newBaseName = "{0:d4}-{1:d2}-{2:d2} {3:d2}.{4:d2}.{5:d2}" -f $year, $month, $day, $hour, $minute, $second
-        if ($rest) {
-            $rest = $rest.Trim()
-            $rest = $rest.TrimStart('-')
-            $rest = $rest.TrimStart('(')
-            $rest = $rest.TrimEnd(')')
-            $rest = $rest.TrimStart('[')
-            $rest = $rest.TrimEnd(']')
-            if ($rest -cnotmatch '\d+') {
-                $newBaseName = "{0} [1]" -f $newBaseName, $rest
-            }
+    #>
+        if ($file.CreationTime -ge $file.LastWriteTime) {
+            $time = $file.LastWriteTime
+        } else {
+            $time = $file.CreationTime
         }
 
-        $newFileName = "{0}{1}" -f $newBaseName, $extension
+        [int]$year = $time.Year
+        [int]$month = $time.Month
+        [int]$day = $time.Day
+        [int]$hour = $time.Hour
+        [int]$minute = $time.Minute
+        [int]$second = $time.Second
+        [int]$millisecond = $time.Millisecond
+        [string]$rest = ''
+    }
+
+    # 根据以上信息生成新的文件名
+    $newBaseName = "{0:d4}-{1:d2}-{2:d2} {3:d2}.{4:d2}.{5:d2}" -f $year, $month, $day, $hour, $minute, $second
+    if ($rest) {
+        $rest = $rest.Trim()
+        $rest = $rest.TrimStart('-')
+        $rest = $rest.TrimStart('(')
+        $rest = $rest.TrimEnd(')')
+        $rest = $rest.TrimStart('[')
+        $rest = $rest.TrimEnd(']')
+        if ($rest -cnotmatch '\d+') {
+            $newBaseName = "{0} [1]" -f $newBaseName, $rest
+        }
+    }
+
+    $newFileName = "{0}{1}" -f $newBaseName, $extension
         
-        $fileType = Get-FileType $extension
-        $folder = "$fileType.bydate"
-        if (!(Test-Path $folder)) {
-            md $folder | Out-Null
+    $fileType = Get-FileType $extension
+    <#
+    $folder = "$fileType.bydate"
+    if (!(Test-Path $folder)) {
+        md $folder | Out-Null
+    }
+    #>
+    
+    $folder = $file.DirectoryName
+    $newPath = Join-Path $folder "$newFileName"
+    $i = 1
+    while ($true) {
+        if ($file.FullName -ieq $newPath) {
+            # 新文件 = 原始文件，什么也不做（无需移动文件）
+            return
         }
 
-        if (Test-Path "$folder\$newFileName") {
-            for ($i = 1;;$i++) {
-                $newFileName = "$newBaseName ($i)$extension"
-                if (!(Test-Path "$folder\$newFileName")) {
-                    break
-                }
-            }
+        if (Test-Path $newPath) {
+            # 换名
+            $newFileName = "$newBaseName ($i)$extension"
+            $newPath = Join-Path $folder "$newFileName"
+            $i++
+        } else {
+            break
         }
-        echo "$fileName -> $newFileName"
-        move -LiteralPath $_.FullName "$folder\$newFileName" #-WhatIf
-    } else {
-        Write-Warning "无法识别 $fileName"
-        if (!(Test-Path 'UNKNOWN')) {
-            md 'UNKNOWN' | Out-Null
-        }
-        move -LiteralPath $_.FullName UNKNOWN #-WhatIf 
     }
+
+    echo "$($file.FullName) -> $newPath"
+    move -LiteralPath $_.FullName "$newPath" #-WhatIf
 }
 
-pushd
-cd $inputDir
+del .picasa.ini, _cache, Thumbs.db -Recurse -ErrorAction SilentlyContinue
+
 dir -Recurse *.jpg, *.png, *.avi, *.mov, *.3gp | 
     where { -not $_.Directory.Name.Contains('bydate') -and -not $_.Directory.Name.Contains('unknown') } | foreach {
     Rename-Photo $_
 }
 
-(Get-ChildItem -recurse | Where-Object {$_.PSIsContainer -eq $True}) |
-    Where-Object {$_.GetFiles().Count -eq 0} | Remove-Item
+Get-ChildItem -recurse | Where {$_.PSIsContainer -and `
+@(Get-ChildItem -Lit $_.Fullname -r | Where {!$_.PSIsContainer}).Length -eq 0} |
+Remove-Item -recurse #-whatif
 
-popd
+dir *.jpg, *.png, *.avi, *.mov, *.3gp | % {
+    $baseName = $_.BaseName
+    $matched = $baseName -cmatch '^(?<YEAR>\d{4})-(?<MONTH>\d{2})-(?<DAY>\d{2}) (?<HOUR>\d{2})\.(?<MINUTE>\d{2})\.(?<SECOND>\d{2})(?:\[\d+\])?\s*(?<REST>.*)$'
+
+    if ($matched) {
+        [int]$year = $Matches['YEAR']
+        [int]$month = $Matches['MONTH']
+        [int]$q = [math]::Floor(($month-1)/4)+1
+    }
+    $newFolder = "$year-Q$q"
+    if (!(Test-Path $newFolder)) {
+        md $newFolder | Out-Null
+    }
+    move -LiteralPath $_.FullName (Join-Path $newFolder $_.Name) #-WhatIf
+}
